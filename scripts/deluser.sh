@@ -16,4 +16,4 @@ fi
 
 USERNAME=${1}
 
-pure-pw userdel ${USERNAME}
+pure-pw userdel ${USERNAME} -f /etc/pure-ftpd/passwd/pureftpd.passwd

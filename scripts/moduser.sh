@@ -27,3 +27,5 @@ else
     pure-pw userdel ${USERNAME} -f /etc/pure-ftpd/passwd/pureftpd.passwd
     (echo ${PASSWORD}; echo ${PASSWORD}) | pure-pw useradd ${USERNAME} -f /etc/pure-ftpd/passwd/pureftpd.passwd -m -d /home/ftpusers/default/${RESTRICTED_FOLDER} -u 1000 -g 1000
 fi
+
+pure-pw mkdb /etc/pure-ftpd/pureftpd.pdb -f /etc/pure-ftpd/passwd/pureftpd.passwd

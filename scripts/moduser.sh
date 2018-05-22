@@ -21,10 +21,10 @@ READ_ONLY=${4}
 
 if [[ ${READ_ONLY} == '1' ]]
     then
-    pure-pw userdel ${USERNAME} -f /etc/pure-ftpd/passwd/pureftpd.passwd
+    pure-pw userdel ${USERNAME} -m -f /etc/pure-ftpd/passwd/pureftpd.passwd
     (echo ${PASSWORD}; echo ${PASSWORD}) | pure-pw useradd ${USERNAME} -f /etc/pure-ftpd/passwd/pureftpd.passwd -m -d /home/ftpusers/default/${RESTRICTED_FOLDER} -u 1001 -g 1001
 else
-    pure-pw userdel ${USERNAME} -f /etc/pure-ftpd/passwd/pureftpd.passwd
+    pure-pw userdel ${USERNAME} -m -f /etc/pure-ftpd/passwd/pureftpd.passwd
     (echo ${PASSWORD}; echo ${PASSWORD}) | pure-pw useradd ${USERNAME} -f /etc/pure-ftpd/passwd/pureftpd.passwd -m -d /home/ftpusers/default/${RESTRICTED_FOLDER} -u 1000 -g 1000
 fi
 

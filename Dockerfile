@@ -5,6 +5,6 @@ RUN chmod -R +x /scripts
 
 ENTRYPOINT ["/scripts/entrypoint.sh"]
 
-CMD /run.sh -c 100 -C 100 -l puredb:/etc/pure-ftpd/pureftpd.pdb -P ${PUBLICHOST} -s -A -j -Z -H -4 -E -w -D -L 40000:5
+CMD /run.sh -c 100 -C 100 -l puredb:/etc/pure-ftpd/pureftpd.pdb -P ${PUBLICHOST} -s -A -j -Z -H -4 -E -w -D -L 40000:5 -b
 
 EXPOSE 21

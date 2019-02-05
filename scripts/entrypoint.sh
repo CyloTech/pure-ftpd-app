@@ -11,7 +11,10 @@ chmod 600 /etc/ssl/private/pure-ftpd.pem
 if [ ! -f /etc/app_configured ]; then
     pure-pw list | grep ${FTP_USER} || (echo ${FTP_PASSWORD}; echo ${FTP_PASSWORD}) | pure-pw useradd ${FTP_USER} -f /etc/pure-ftpd/passwd/pureftpd.passwd -m -d /home/ftpusers/default -u 1000 -g 1000
     touch /etc/app_configured
-    curl -i -H "Accept: application/json" -H "Content-Type:application/json" -X POST "https://api.cylo.io/v1/apps/installed/$INSTANCE_ID"
+    until [[ $(curl -i -H "Accept: application/json" -H "Content-Type:application/json" -X POST "https://api.cylo.io/v1/apps/installed/${INSTANCE_ID}" | grep '200') ]]
+        do
+        sleep 5
+    done
 fi
 
 exec "$@"

@@ -73,6 +73,11 @@ COPY --from=builder /build/usr /usr
 ADD scripts /scripts
 RUN chmod -R +x /scripts
 
+# Sends POST /v1/apps/installed/${INSTANCE_ID} for the entrypoint. It retries
+# network errors, 408, 429 and 5xx and stops on any other status.
+COPY appbox-installed-callback /usr/local/bin/appbox-installed-callback
+RUN chmod 755 /usr/local/bin/appbox-installed-callback
+
 # Create the entrypoint script
 RUN cat > /entrypoint.sh <<'EOF'
 #!/bin/bash
@@ -99,12 +104,22 @@ if [ ! -f /etc/app_configured ]; then
     fi
     touch /etc/app_configured
     
-    # Notify API if INSTANCE_ID is set
+    # Mark the installed callback pending if INSTANCE_ID is set; it is sent
+    # in the background below.
     if [ -n "$INSTANCE_ID" ]; then
-        until curl -s -i -H "Accept: application/json" -H "Content-Type:application/json" -X POST "https://api.cylo.io/v1/apps/installed/${INSTANCE_ID}" 2>/dev/null | grep -q '200'; do
-            sleep 5
-        done &
+        touch /etc/appbox_callback_pending
     fi
+fi
+
+# Send a pending installed callback in the background. The helper stops on a
+# rejection (e.g. 401 once the token was used or cleared) instead of retrying
+# forever, and pure-ftpd starts whatever the API answers.
+if [ -f /etc/appbox_callback_pending ]; then
+    (
+        set +e
+        /usr/local/bin/appbox-installed-callback
+        rm -f /etc/appbox_callback_pending
+    ) </dev/null &
 fi
 
 # Build command line arguments

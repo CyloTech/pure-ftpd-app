@@ -102,13 +102,13 @@ if [ ! -f /etc/app_configured ]; then
     if [ ! -f /etc/pure-ftpd/pureftpd.pdb ] && [ -f /etc/pure-ftpd/passwd/pureftpd.passwd ]; then
         pure-pw mkdb /etc/pure-ftpd/pureftpd.pdb -f /etc/pure-ftpd/passwd/pureftpd.passwd
     fi
-    touch /etc/app_configured
-    
-    # Mark the installed callback pending if INSTANCE_ID is set; it is sent
-    # in the background below.
+    # Mark the installed callback pending if INSTANCE_ID is set, before the
+    # configured marker so a crash in between cannot lose it. It is sent in
+    # the background below.
     if [ -n "$INSTANCE_ID" ]; then
         touch /etc/appbox_callback_pending
     fi
+    touch /etc/app_configured
 fi
 
 # Send a pending installed callback in the background. The helper stops on a

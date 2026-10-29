@@ -23,7 +23,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /src
 RUN git clone --depth 1 --branch ${PUREFTPD_VERSION} https://github.com/jedisct1/pure-ftpd.git .
 
-RUN ./autogen.sh && ./configure \
+# ALWAYS_SHOW_RESOLVED_SYMLINKS lists symlinks to files and folders as what
+# they point to, which -b (--brokenclientscompat) used to do. -b also refuses
+# EPSV over IPv4 while FEAT still advertises it, which breaks clients such as
+# n8n's FTP node, so the entrypoint no longer passes it.
+RUN ./autogen.sh && CPPFLAGS="-DALWAYS_SHOW_RESOLVED_SYMLINKS" ./configure \
     --prefix=/usr \
     --sysconfdir=/etc \
     --without-humor \
@@ -126,7 +130,7 @@ fi
 FTPD_ARGS="-l puredb:/etc/pure-ftpd/pureftpd.pdb"
 [ -n "$PUBLICHOST" ] && FTPD_ARGS="$FTPD_ARGS -P $PUBLICHOST"
 [ -n "$FIRST_PORT" ] && [ -n "$LAST_PORT" ] && FTPD_ARGS="$FTPD_ARGS -p $FIRST_PORT:$LAST_PORT"
-FTPD_ARGS="$FTPD_ARGS -s -A -j -Z -H -4 -E -w -D -L 200000:5 -b -d -c 50 -C 50"
+FTPD_ARGS="$FTPD_ARGS -s -A -j -Z -H -4 -E -w -D -L 200000:5 -d -c 50 -C 50"
 
 # Add TLS if certificate exists
 if [ -f /data/pureftpd.pem ]; then

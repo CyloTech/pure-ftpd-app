@@ -179,7 +179,8 @@ stop_mock
 
 # Extract the /entrypoint.sh heredoc from the Dockerfile, point its paths into
 # a scratch directory and replace `exec pure-ftpd ...` with a fake app that
-# records when it started.
+# records when it started. `busybox syslogd` becomes a stand-in that binds the
+# scratch log socket the entrypoint waits for.
 #   state: fresh (no app_configured), restart-pending (app_configured and the
 #   pending flag present) or restart (app_configured only).
 entrypoint_case() {
@@ -187,8 +188,18 @@ entrypoint_case() {
     start_mock "${codes}"
     local sandbox="${work}/entrypoint.sh"
     mkdir -p "${work}/pure-ftpd/passwd"
+    cat >"${work}/fake-syslogd" <<EOF
+#!/usr/bin/env python3
+import socket, time
+s = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
+s.bind('${work}/dev-log')
+time.sleep(3)
+EOF
+    chmod +x "${work}/fake-syslogd"
     sed -n "/^RUN cat > \/entrypoint.sh <<'EOF'$/,/^EOF$/p" "${repo_root}/Dockerfile" \
         | sed -e '1d' -e '$d' \
+            -e "s|/dev/log|${work}/dev-log|g" \
+            -e "s|^busybox syslogd |${work}/fake-syslogd |" \
             -e "s|/etc/app_configured|${work}/app_configured|g" \
             -e "s|/etc/appbox_callback_pending|${work}/callback_pending|g" \
             -e "s|/usr/local/bin/appbox-installed-callback|${helper}|g" \
@@ -199,7 +210,8 @@ entrypoint_case() {
             -e 's|^exec pure-ftpd $FTPD_ARGS$|exec "$@"|' \
         >"${sandbox}"
     chmod +x "${sandbox}"
-    if ! grep -q '^exec "\$@"$' "${sandbox}" || ! grep -q '^#!/bin/bash$' "${sandbox}"; then
+    if ! grep -q '^exec "\$@"$' "${sandbox}" || ! grep -q '^#!/bin/bash$' "${sandbox}" \
+        || grep -q '^busybox syslogd' "${sandbox}"; then
         fail "entrypoint ${state}: could not extract and sandbox /entrypoint.sh"
         stop_mock
         return

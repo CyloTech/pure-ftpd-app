@@ -62,6 +62,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     curl \
     bash \
+    busybox \
     openssl \
     libssl3 \
     libmariadb3 \
@@ -125,6 +126,18 @@ if [ -f /etc/appbox_callback_pending ]; then
         rm -f /etc/appbox_callback_pending
     ) </dev/null &
 fi
+
+# pure-ftpd logs only to syslog. busybox syslogd writes those messages to
+# stdout, so connections, logins and failed logins reach `docker logs`.
+# -l 7 keeps info and above and drops the per-command debug lines from -d.
+# pure-ftpd connects to /dev/log when it starts, before any session chroots,
+# so wait for the socket first.
+rm -f /dev/log
+busybox syslogd -n -S -O - -l 7 &
+for _ in $(seq 1 50); do
+    [ -S /dev/log ] && break
+    sleep 0.1
+done
 
 # Build command line arguments
 FTPD_ARGS="-l puredb:/etc/pure-ftpd/pureftpd.pdb"

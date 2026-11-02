@@ -9,7 +9,10 @@ the host with ftplib, over plain FTP and explicit TLS:
     whenever FEAT lists it; the old -b flag answered "500 Unknown command");
   - uploads and downloads work over both PASV and EPSV;
   - symlinks to folders and files are listed as folders and files;
-  - the server comes back after a restart;
+  - a failed login and a successful login both reach `docker logs`, and
+    neither password does;
+  - `docker stop` with a logged-in session finishes well inside Docker's
+    timeout, and the server comes back after it with logging still working;
   - BASELINE_IMAGE (the current release) re-created as IMAGE on the same
     passwd volume, as an Appbox update does, keeps the user and its login.
 """
@@ -145,6 +148,55 @@ def check(label, ip, tls):
         ok(f'{label} {mode}: client session', False, f'{type(e).__name__}: {e}')
 
 
+def container_logs(name, since=None):
+    args = ['logs'] + (['--since', since] if since else []) + [name]
+    out = docker(*args, check=False)
+    return out.stdout + out.stderr
+
+
+def log_check(label, name, ip):
+    since = f'{time.time() - 1:.3f}'
+    bad = secrets.token_hex(16)
+    try:
+        f = ftplib.FTP(timeout=15)
+        f.connect(ip, 21)
+        f.login(user, bad)
+        f.quit()
+        refused = False
+    except ftplib.error_perm:
+        refused = True
+    ok(f'{label}: wrong password refused', refused)
+    try:
+        connect(ip, False).quit()
+    except Exception as e:
+        ok(f'{label}: login', False, f'{type(e).__name__}: {e}')
+    failed, logged_in = f'Authentication failed for user [{user}]', f'{user} is now logged in'
+    deadline = time.time() + 10
+    while True:
+        text = container_logs(name, since)
+        if (failed in text and logged_in in text) or time.time() > deadline:
+            break
+        time.sleep(0.5)
+    ok(f'{label}: failed login in docker logs', failed in text)
+    ok(f'{label}: login in docker logs', logged_in in text)
+    full = container_logs(name)
+    ok(f'{label}: no debug lines in docker logs', '[DEBUG]' not in full)
+    ok(f'{label}: no password in docker logs', password not in full and bad not in full)
+
+
+def timed_stop(label, name, ip):
+    try:
+        session = connect(ip, False)
+    except Exception as e:
+        ok(f'{label}: login before stop', False, f'{type(e).__name__}: {e}')
+        return
+    began = time.time()
+    docker('stop', '-t', '30', name)
+    took = time.time() - began
+    session.close()
+    ok(f'{label}: docker stop with a logged-in session took under 10s', took < 10, f'{took:.1f}s')
+
+
 def fixture(home):
     docker('run', '--rm', '--entrypoint', 'sh', '-v', f'{home}:/h', image, '-c',
            'mkdir -p /h/realdir && echo hello > /h/file.txt && echo inner > /h/realdir/inner.txt'
@@ -170,9 +222,12 @@ try:
     ok('fresh: server starts', start(image, name, home, pw, ip, work))
     check('fresh', ip, tls=False)
     check('fresh', ip, tls=True)
-    docker('restart', name)
+    log_check('fresh', name, ip)
+    timed_stop('stop', name, ip)
+    docker('start', name)
     ok('restart: server starts', wait_ready(name, ip))
     check('restart', ip, tls=False)
+    log_check('restart', name, ip)
     docker('rm', '-f', name)
 
     # Update from the current release: same volumes, new container.
@@ -191,6 +246,7 @@ try:
     name = f'pureftpd-test-upd-{suffix}'
     ok('update: server starts on the baseline volumes', start(image, name, home, pw, ip, work))
     check('update', ip, tls=False)
+    log_check('update', name, ip)
 except Exception as e:
     ok('test harness', False, f'{type(e).__name__}: {e}')
 finally:

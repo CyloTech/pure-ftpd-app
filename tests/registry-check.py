@@ -3,9 +3,9 @@
 import subprocess
 import sys
 
-EXPECTED = 'repo.cylo.net/pure-ftpd:1.0.52-3'
-# The image catalogue version 1.0.52-2 runs. The upgrade test starts from it.
-CURRENT = 'repo.cylo.net/pure-ftpd@sha256:83d2f03a1ba674eb7babc80cde419f55b9d1544feb838b45833f2a01c2f43fc1'
+EXPECTED = 'repo.cylo.net/pure-ftpd:1.0.52-4'
+# The image catalogue version 1.0.52-3 runs. The upgrade test starts from it.
+CURRENT = 'repo.cylo.net/pure-ftpd@sha256:862f352b441eacaaf2a8c9a3a729d1c24a396f6477ee3df591977489f7594da2'
 
 
 def require_absent(image):

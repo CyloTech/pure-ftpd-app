@@ -13,6 +13,10 @@ the host with ftplib, over plain FTP and explicit TLS:
     neither password does;
   - `docker stop` with a logged-in session finishes well inside Docker's
     timeout, and the server comes back after it with logging still working;
+  - a connection that has not logged in is closed with 421 about
+    LOGIN_TIMEOUT seconds after it connected, whether it stays silent or
+    sends a few bytes with no newline every few seconds; a client that logs
+    in just before then, and stays idle past it, keeps its session;
   - BASELINE_IMAGE (the current release) re-created as IMAGE on the same
     passwd volume, as an Appbox update does, keeps the user and its login.
 """
@@ -26,6 +30,7 @@ import ssl
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 
 image, baseline = sys.argv[1], sys.argv[2]
@@ -35,6 +40,7 @@ user = 'gateuser'
 password = secrets.token_hex(16)
 containers, volumes = [], []
 failures = []
+LOGIN_TIMEOUT = 60  # -DLOGIN_TIMEOUT in the Dockerfile
 
 
 def docker(*args, check=True):
@@ -197,6 +203,85 @@ def timed_stop(label, name, ip):
     ok(f'{label}: docker stop with a logged-in session took under 10s', took < 10, f'{took:.1f}s')
 
 
+def unauthenticated(ip, trickle):
+    """Connect, never log in, and time how long the server keeps the session.
+
+    With trickle, send 4 bytes with no newline every 7 seconds, as the stray
+    clients that filled a customer's server did. The interval keeps a send
+    away from the moment the server closes, so its 421 is read before any
+    reset. Returns (seconds until the server closed, its non-banner replies).
+    """
+    began = time.time()
+    s = socket.create_connection((ip, 21), 10)
+    s.settimeout(1)
+    received = b''
+    next_send = began + 7
+    try:
+        while time.time() - began < LOGIN_TIMEOUT + 30:
+            if trickle and time.time() >= next_send:
+                try:
+                    s.sendall(b'\x00\x00\x00\x13')
+                except OSError:
+                    break
+                next_send += 7
+            try:
+                chunk = s.recv(4096)
+            except socket.timeout:
+                continue
+            except OSError:
+                break
+            if not chunk:
+                break
+            received += chunk
+    finally:
+        took = time.time() - began
+        s.close()
+    return took, [l for l in received.split(b'\r\n') if l and not l.startswith(b'220')]
+
+
+def slow_login(ip):
+    """Log in 40 seconds after connecting, then stay idle past the timeout."""
+    began = time.time()
+    f = ftplib.FTP(timeout=15)
+    f.connect(ip, 21)
+    time.sleep(40)
+    f.login(user, password)
+    time.sleep(max(0, began + LOGIN_TIMEOUT + 20 - time.time()))
+    f.voidcmd('NOOP')
+    f.quit()
+    return True
+
+
+def login_timeout_check(label, ip):
+    results = {}
+
+    def run(key, fn, *args):
+        try:
+            results[key] = fn(*args)
+        except Exception as e:
+            results[key] = e
+
+    threads = [threading.Thread(target=run, args=('silent', unauthenticated, ip, False)),
+               threading.Thread(target=run, args=('trickle', unauthenticated, ip, True)),
+               threading.Thread(target=run, args=('slow', slow_login, ip))]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(LOGIN_TIMEOUT + 60)
+    for key in ('silent', 'trickle'):
+        r = results.get(key)
+        if isinstance(r, tuple):
+            took, replies = r
+            ok(f'{label}: {key} unauthenticated session closed after about {LOGIN_TIMEOUT}s',
+               LOGIN_TIMEOUT - 2 <= took <= LOGIN_TIMEOUT + 10, f'{took:.1f}s')
+            ok(f'{label}: {key} unauthenticated session told 421',
+               len(replies) == 1 and replies[0].startswith(b'421'), repr(replies))
+        else:
+            ok(f'{label}: {key} unauthenticated session', False, repr(r))
+    r = results.get('slow')
+    ok(f'{label}: login after 40s survives past the login timeout', r is True, repr(r))
+
+
 def fixture(home):
     docker('run', '--rm', '--entrypoint', 'sh', '-v', f'{home}:/h', image, '-c',
            'mkdir -p /h/realdir && echo hello > /h/file.txt && echo inner > /h/realdir/inner.txt'
@@ -223,6 +308,7 @@ try:
     check('fresh', ip, tls=False)
     check('fresh', ip, tls=True)
     log_check('fresh', name, ip)
+    login_timeout_check('fresh', ip)
     timed_stop('stop', name, ip)
     docker('start', name)
     ok('restart: server starts', wait_ready(name, ip))

@@ -1,0 +1,31 @@
+diff --git a/src/ftp_parser.c b/src/ftp_parser.c
+index ddcb393..f30cba5 100644
+--- a/src/ftp_parser.c
++++ b/src/ftp_parser.c
+@@ -254,6 +254,26 @@ void parser(void)
+             return;
+         }
+         doreply();
++#ifdef LOGIN_TIMEOUT
++        /*
++         * Until the client logs in, the session ends LOGIN_TIMEOUT seconds
++         * after it connected. sfgets() restarts its idle timer whenever any
++         * bytes arrive, even without a newline, so a client that never sends
++         * a command but trickles a few bytes would otherwise keep its slot
++         * until the idletime * 2 alarm below.
++         */
++        if (loggedin == 0) {
++            time_t login_elapsed = time(NULL) - session_start_time;
++
++            if (login_elapsed < (time_t) 0) {   /* the clock went back */
++                login_elapsed = (time_t) 0;
++            }
++            if (login_elapsed >= (time_t) LOGIN_TIMEOUT) {
++                die(421, LOG_INFO, MSG_TIMEOUT);
++            }
++            alarm((unsigned int) ((time_t) LOGIN_TIMEOUT - login_elapsed));
++        } else
++#endif
+         alarm(idletime * 2);
+         switch (sfgets()) {
+         case -1:

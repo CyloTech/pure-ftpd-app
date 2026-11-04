@@ -23,11 +23,20 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /src
 RUN git clone --depth 1 --branch ${PUREFTPD_VERSION} https://github.com/jedisct1/pure-ftpd.git .
 
+# login-timeout.patch ends a session that has not logged in LOGIN_TIMEOUT
+# seconds after it connected. Without it, a client that never sends a full
+# command line but sends a few bytes every minute holds one of the -c slots
+# for 30 minutes (the idletime * 2 alarm). Enough of them, from stray clients
+# on the Internet, refuse real users with "421 50 users (the maximum) are
+# already logged in".
+COPY patches/login-timeout.patch /tmp/login-timeout.patch
+RUN git apply /tmp/login-timeout.patch
+
 # ALWAYS_SHOW_RESOLVED_SYMLINKS lists symlinks to files and folders as what
 # they point to, which -b (--brokenclientscompat) used to do. -b also refuses
 # EPSV over IPv4 while FEAT still advertises it, which breaks clients such as
 # n8n's FTP node, so the entrypoint no longer passes it.
-RUN ./autogen.sh && CPPFLAGS="-DALWAYS_SHOW_RESOLVED_SYMLINKS" ./configure \
+RUN ./autogen.sh && CPPFLAGS="-DALWAYS_SHOW_RESOLVED_SYMLINKS -DLOGIN_TIMEOUT=60" ./configure \
     --prefix=/usr \
     --sysconfdir=/etc \
     --without-humor \
